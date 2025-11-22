@@ -44,6 +44,22 @@ step() {
 }
 
 ##############################################################################
+# Ensure we're in the project root directory
+##############################################################################
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Change to project root
+cd "$PROJECT_ROOT" || {
+    log_error "Failed to change to project root: $PROJECT_ROOT"
+    exit 1
+}
+
+log_info "Running from project root: $PROJECT_ROOT"
+
+##############################################################################
 # Pre-flight checks
 ##############################################################################
 
