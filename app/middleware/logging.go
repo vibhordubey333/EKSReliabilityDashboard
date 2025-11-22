@@ -40,12 +40,15 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		// Calculate duration
 		duration := time.Since(start)
 
-		// Log request
+		// Log request with Elasticsearch-friendly fields
 		zap.L().Info("HTTP request",
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
+			zap.String("route", r.URL.Path), // Alias for Elasticsearch
 			zap.Int("status", rw.statusCode),
+			zap.Int("status_code", rw.statusCode), // Alias for Elasticsearch
 			zap.Duration("duration", duration),
+			zap.Float64("latency", duration.Seconds()), // Latency in seconds for Elasticsearch
 			zap.String("remote_addr", r.RemoteAddr),
 			zap.String("user_agent", r.UserAgent()),
 		)

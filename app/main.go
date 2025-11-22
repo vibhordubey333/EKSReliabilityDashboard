@@ -18,8 +18,13 @@ import (
 )
 
 func main() {
-	// Initialize structured logger
-	logger, err := zap.NewProduction()
+	// Initialize structured logger with explicit field names for Elasticsearch
+	config := zap.NewProductionConfig()
+	config.EncoderConfig.TimeKey = "timestamp"
+	config.EncoderConfig.MessageKey = "message"
+	config.EncoderConfig.LevelKey = "level"
+
+	logger, err := config.Build()
 	if err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}

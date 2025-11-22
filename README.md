@@ -45,13 +45,49 @@ git clone https://github.com/vibhordubey333/EKSReliabilityDashboard.git
 cd EKSReliabilityDashboard
 ```
 
-### 2. Create the EKS Cluster
+### 2. Set Up the Cluster
+
+**Option A: Complete Setup (Automated)**
+
+Run everything in one command:
 
 ```bash
-./scripts/setup-cluster.sh
+./scripts/setup-complete-demo.sh
 ```
 
-This script will:
+This will:
+- Create EKS cluster
+- Install monitoring stack (Prometheus & Grafana)
+- Install logging stack (Elasticsearch, Fluent Bit & Kibana)
+- Build and push Docker image
+- Deploy SRE demo service to dev/qa/prod
+
+**Estimated time: 30-40 minutes**
+
+**Option B: Step-by-Step Setup (Manual)**
+
+Set up components individually:
+
+```bash
+# 1. Create cluster
+./scripts/setup-cluster.sh
+
+# 2. Install monitoring (optional)
+./scripts/install-monitoring.sh
+
+# 3. Install logging (optional)
+./scripts/install-logging.sh
+
+# 4. Build and push application
+./scripts/build-and-push.sh
+
+# 5. Deploy application
+kubectl apply -f k8s/deployments/dev/
+kubectl apply -f k8s/deployments/qa/
+kubectl apply -f k8s/deployments/prod/
+```
+
+This will:
 - Validate prerequisites
 - Create EKS cluster in us-east-1
 - Create dev, qa, prod namespaces
