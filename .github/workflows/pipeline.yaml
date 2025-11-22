@@ -1,0 +1,267 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, 'Feature/*']
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  GO_VERSION: '1.21'
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: sre-demo-service
+  EKS_CLUSTER_NAME: eks-reliability-demo
+
+jobs:
+  ##############################################################################
+  # Build and Test
+  ##############################################################################
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build Go binary
+        working-directory: ./app
+        run: |
+          echo "Building Go application..."
+          go build -v -o sre-demo-service .
+          ls -lh sre-demo-service
+
+      - name: Run unit tests
+        working-directory: ./app
+        run: |
+          echo "Running tests with coverage..."
+          go test -v -coverprofile=coverage.out -covermode=atomic ./...
+          go tool cover -func=coverage.out
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./app/coverage.out
+          flags: unittests
+          fail_ci_if_error: false
+
+  ##############################################################################
+  # Docker Build and Push to ECR
+  ##############################################################################
+  docker-build-push:
+    name: Docker Build and Push
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'push'
+    
+    outputs:
+      image-tag: ${{ steps.meta.outputs.version }}
+      image-uri: ${{ steps.build.outputs.image }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Extract metadata
+        id: meta
+        run: |
+          # Use Git SHA as primary tag
+          echo "version=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          echo "branch=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.meta.outputs.version }}
+          BRANCH: ${{ steps.meta.outputs.branch }}
+        run: |
+          echo "Building Docker image..."
+          
+          # Build image
+          docker build \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$BRANCH \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            -f app/Dockerfile \
+            ./app
+          
+          # Push all tags
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$BRANCH
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "Image pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+  ##############################################################################
+  # Deploy to Dev Environment
+  ##############################################################################
+  deploy-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    needs: docker-build-push
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    environment: development
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Deploy to dev namespace
+        env:
+          IMAGE_URI: ${{ needs.docker-build-push.outputs.image-uri }}
+        run: |
+          echo "Deploying to dev namespace..."
+          echo "Image: $IMAGE_URI"
+          
+          # Update deployment image
+          kubectl set image deployment/sre-demo-service \
+            sre-demo-service=$IMAGE_URI \
+            -n dev
+          
+          # Wait for rollout
+          kubectl rollout status deployment/sre-demo-service -n dev --timeout=5m
+
+      - name: Verify deployment
+        run: |
+          echo "Verifying deployment..."
+          kubectl get pods -n dev -l app=sre-demo-service
+          kubectl get deployment sre-demo-service -n dev
+
+  ##############################################################################
+  # Deploy to QA Environment
+  ##############################################################################
+  deploy-qa:
+    name: Deploy to QA
+    runs-on: ubuntu-latest
+    needs: [docker-build-push, deploy-dev]
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    environment: qa
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Deploy to qa namespace
+        env:
+          IMAGE_URI: ${{ needs.docker-build-push.outputs.image-uri }}
+        run: |
+          echo "Deploying to qa namespace..."
+          echo "Image: $IMAGE_URI"
+          
+          # Update deployment image
+          kubectl set image deployment/sre-demo-service \
+            sre-demo-service=$IMAGE_URI \
+            -n qa
+          
+          # Wait for rollout
+          kubectl rollout status deployment/sre-demo-service -n qa --timeout=5m
+
+      - name: Verify deployment
+        run: |
+          echo "Verifying deployment..."
+          kubectl get pods -n qa -l app=sre-demo-service
+          kubectl get deployment sre-demo-service -n qa
+
+  ##############################################################################
+  # Deploy to Production Environment (Manual Approval Required)
+  ##############################################################################
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [docker-build-push, deploy-qa]
+    if: github.ref == 'refs/heads/main'
+    environment: production  # This requires manual approval in GitHub
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Deploy to prod namespace
+        env:
+          IMAGE_URI: ${{ needs.docker-build-push.outputs.image-uri }}
+        run: |
+          echo "Deploying to production namespace..."
+          echo "Image: $IMAGE_URI"
+          
+          # Update deployment image
+          kubectl set image deployment/sre-demo-service \
+            sre-demo-service=$IMAGE_URI \
+            -n prod
+          
+          # Wait for rollout
+          kubectl rollout status deployment/sre-demo-service -n prod --timeout=5m
+
+      - name: Verify deployment
+        run: |
+          echo "Verifying production deployment..."
+          kubectl get pods -n prod -l app=sre-demo-service
+          kubectl get deployment sre-demo-service -n prod
+
+      - name: Deployment summary
+        run: |
+          echo "========================================="
+          echo "Production Deployment Complete"
+          echo "========================================="
+          echo "Image: ${{ needs.docker-build-push.outputs.image-uri }}"
+          echo "Git SHA: ${GITHUB_SHA::7}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "========================================="
