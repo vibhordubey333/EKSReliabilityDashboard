@@ -11,6 +11,115 @@ This project demonstrates:
 - **SRE best practices** including observability, resource management, and cost optimization
 - **Automated deployment and validation** workflows
 
+## Architecture
+
+### System Overview
+
+```mermaid
+graph TB
+    subgraph "GitHub"
+        Code[Source Code]
+        Actions[GitHub Actions]
+    end
+    
+    subgraph "AWS Cloud"
+        subgraph "EKS Cluster"
+            subgraph "Namespaces"
+                Dev[Dev Namespace]
+                QA[QA Namespace]
+                Prod[Prod Namespace]
+            end
+            
+            subgraph "Monitoring"
+                Prometheus[Prometheus]
+                Grafana[Grafana]
+            end
+            
+            subgraph "Logging"
+                Fluent[Fluent Bit]
+                Elastic[Elasticsearch]
+                Kibana[Kibana]
+            end
+        end
+        
+        ECR[Amazon ECR]
+        EBS[EBS Volumes]
+    end
+    
+    Code -->|Push| Actions
+    Actions -->|Build & Test| Actions
+    Actions -->|Push Image| ECR
+    Actions -->|Deploy| Dev
+    Dev -->|Promote| QA
+    QA -->|Approve| Prod
+    
+    Dev -.->|Metrics| Prometheus
+    QA -.->|Metrics| Prometheus
+    Prod -.->|Metrics| Prometheus
+    
+    Dev -.->|Logs| Fluent
+    QA -.->|Logs| Fluent
+    Prod -.->|Logs| Fluent
+    
+    Fluent -->|Store| Elastic
+    Prometheus -->|Visualize| Grafana
+    Elastic -->|Query| Kibana
+    
+    Prometheus -->|Storage| EBS
+    Elastic -->|Storage| EBS
+```
+
+### Component Architecture
+
+```mermaid
+graph LR
+    subgraph "Application"
+        App[SRE Demo Service]
+        Health[/health]
+        Metrics[/metrics]
+        Debug[/debug/pprof]
+    end
+    
+    subgraph "Observability Stack"
+        ServiceMonitor[ServiceMonitor]
+        Prom[Prometheus]
+        Graf[Grafana]
+        FB[Fluent Bit]
+        ES[Elasticsearch]
+        Kib[Kibana]
+    end
+    
+    App --> Health
+    App --> Metrics
+    App --> Debug
+    
+    Metrics -->|Scrape| ServiceMonitor
+    ServiceMonitor -->|Targets| Prom
+    Prom -->|Datasource| Graf
+    
+    App -->|JSON Logs| FB
+    FB -->|Index| ES
+    ES -->|Search| Kib
+```
+
+### CI/CD Pipeline Flow
+
+```mermaid
+graph LR
+    A[Git Push] --> B[Build & Test]
+    B --> C[Docker Build]
+    C --> D[Push to ECR]
+    D --> E[Deploy Dev]
+    E --> F[Deploy QA]
+    F --> G{Manual Approval}
+    G -->|Approved| H[Deploy Prod]
+    G -->|Rejected| I[Stop]
+    
+    style G fill:#ff9,stroke:#333,stroke-width:2px
+    style H fill:#9f9,stroke:#333,stroke-width:2px
+    style I fill:#f99,stroke:#333,stroke-width:2px
+```
+
 ## Prerequisites
 
 Before you begin, ensure you have:
