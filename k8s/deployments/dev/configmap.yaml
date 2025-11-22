@@ -1,0 +1,13 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sre-demo-config
+  namespace: dev
+  labels:
+    app: sre-demo-service
+    environment: dev
+data:
+  ENVIRONMENT: "dev"
+  LOG_LEVEL: "debug"
+  SERVICE_NAME: "sre-demo-service"
