@@ -51,6 +51,7 @@ echo "  • Region: $REGION"
 echo "  • All worker nodes"
 echo "  • All workloads and data"
 echo "  • VPC and networking resources"
+echo "  • ECR repository: sre-demo-service (including all images)"
 echo ""
 log_warning "This action CANNOT be undone!"
 echo ""
@@ -118,6 +119,40 @@ else
 fi
 
 ##############################################################################
+# Delete ECR repository
+##############################################################################
+
+log_info "Cleaning up ECR repository..."
+
+ECR_REPO_NAME="sre-demo-service"
+
+# Check if ECR repository exists
+if aws ecr describe-repositories --repository-names "$ECR_REPO_NAME" --region "$REGION" &> /dev/null; then
+    log_info "Deleting ECR repository '$ECR_REPO_NAME'..."
+    
+    # Delete all images first (required before deleting repository)
+    IMAGE_IDS=$(aws ecr list-images --repository-name "$ECR_REPO_NAME" --region "$REGION" --query 'imageIds[*]' --output json)
+    
+    if [ "$IMAGE_IDS" != "[]" ]; then
+        log_info "Deleting all images in repository..."
+        aws ecr batch-delete-image \
+            --repository-name "$ECR_REPO_NAME" \
+            --region "$REGION" \
+            --image-ids "$IMAGE_IDS" &> /dev/null || true
+    fi
+    
+    # Delete the repository
+    if aws ecr delete-repository --repository-name "$ECR_REPO_NAME" --region "$REGION" --force &> /dev/null; then
+        log_success "ECR repository deleted successfully"
+    else
+        log_warning "Failed to delete ECR repository. You may need to delete it manually."
+    fi
+else
+    log_info "ECR repository '$ECR_REPO_NAME' does not exist, skipping..."
+fi
+
+
+##############################################################################
 # Verify deletion
 ##############################################################################
 
@@ -157,6 +192,7 @@ log_info "  • EC2 Dashboard → Load Balancers"
 log_info "  • EC2 Dashboard → Volumes"
 log_info "  • VPC Dashboard"
 log_info "  • CloudFormation → Stacks"
+log_info "  • ECR → Repositories"
 echo ""
 log_success "Thank you for using the EKS Reliability Demo!"
 echo ""
