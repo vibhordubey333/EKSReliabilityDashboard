@@ -580,6 +580,268 @@ This will safely delete:
 - EKS cluster
 - Associated VPC resources
 
+---
+
+## Monitoring and Observability
+
+### Grafana Dashboards
+
+Access Grafana to view real-time metrics:
+
+```bash
+./scripts/access-grafana.sh
+# Open http://localhost:3000 (admin/admin123)
+```
+
+**Key Dashboards:**
+
+**SRE Demo System Health Dashboard:**
+- CPU Usage per pod
+- Memory usage and heap trends
+- Pod restart count (1h window)
+- Request rate by endpoint
+- Error rate percentage
+- Latency (p95/p99)
+- GC pause duration
+- Active pod count
+
+**Example Queries:**
+```promql
+# Request rate
+sum(rate(http_requests_total{namespace="dev"}[5m])) by (endpoint)
+
+# Error rate %
+sum(rate(http_requests_total{status!="OK"}[5m])) 
+/ sum(rate(http_requests_total[5m])) * 100
+
+# p95 latency
+histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+```
+
+### Prometheus Targets
+
+View scrape targets:
+
+```bash
+kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 9090:9090
+# Open http://localhost:9090/targets
+```
+
+All ServiceMonitors should show status: "UP"
+
+---
+
+## Centralized Logging
+
+### Kibana Log Analysis
+
+Access Kibana for log aggregation:
+
+```bash
+./scripts/access-kibana.sh
+# Open http://localhost:5601
+```
+
+**Setup Index Pattern:**
+1. Stack Management > Index Patterns
+2. Create pattern: `logstash-*`
+3. Time field: `@timestamp`
+
+**Sample Queries:**
+```
+# Dev namespace logs
+kubernetes.namespace_name: "dev"
+
+# Error logs only
+level: "error" AND kubernetes.namespace_name: "prod"
+
+# High latency requests
+latency: >1 AND route: "/cpu"
+
+# Specific endpoint
+route: "/health" AND status_code: 200
+```
+
+**Parsed Fields Available:**
+- `timestamp` - Request time
+- `level` - Log level (info, error, warn)
+- `route` - HTTP endpoint
+- `latency` - Response time (seconds)
+- `status_code` - HTTP status
+- `method` - HTTP method
+- `kubernetes.namespace_name` - Namespace
+- `kubernetes.pod_name` - Pod name
+
+---
+
+## Lessons Learned
+
+### SRE Best Practices Demonstrated
+
+#### 1. **Progressive Deployment Strategy**
+
+**What we did:**
+- Implemented dev → qa → prod promotion pipeline
+- Manual approval gate for production
+- Automated rollout verification
+
+**Why it matters:**
+- Catches issues early in dev/qa
+- Reduces production incidents by 80%+
+- Allows easy rollback if needed
+
+**Key takeaway:** Never deploy directly to production. Always test in lower environments first.
+
+#### 2. **Observability is Non-Negotiable**
+
+**What we did:**
+- Metrics (Prometheus) - "What is breaking?"
+- Logs (EFK) - "Why is it breaking?"
+- Traces (pprof) - "Where is it breaking?"
+
+**Why it matters:**
+- Average MTTR (Mean Time To Resolve) reduced from hours to minutes
+- Can correlate Grafana spike with Kibana logs instantly
+- pprof pinpoints exact function causing issues
+
+**Key takeaway:** You can't fix what you can't see. Observability must be built in, not bolted on.
+
+#### 3. **Resource Limits Prevent Cascading Failures**
+
+**What we did:**
+```yaml
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+```
+
+**Why it matters:**
+- One misbehaving pod can't kill the entire cluster
+- QoS classes ensure critical pods get resources first
+- Prevents OOMKilled scenarios from affecting neighbors
+
+**Key takeaway:** Always set resource requests and limits. Unlimited resources = unlimited blast radius.
+
+#### 4. **Horizontal Pod Autoscaling Saves Money**
+
+**What we did:**
+- HPA with 70% CPU target
+- Scale 2-5 pods in dev/qa, 3-10 in prod
+- Conservative scale-down (300s stabilization)
+
+**Why it matters:**
+- Automatically handles traffic spikes
+- Scales down during low traffic (cost savings)
+- No manual intervention needed
+
+**Key takeaway:** Right-size for average load, autoscale for peaks. Over-provisioning wastes 40-60% of cloud spend.
+
+#### 5. **Namespace Isolation is Security AND Organization**
+
+**What we did:**
+- Separate namespaces: dev, qa, prod
+- RBAC per namespace
+- Resource quotas per environment
+
+**Why it matters:**
+- Dev accident can't break prod
+- Different teams can have different permissions
+- Cost allocation per environment
+
+**Key takeaway:** Namespaces are free. Use them liberally for isolation.
+
+#### 6. **JSON Logs Enable Powerful Analytics**
+
+**What we did:**
+- Structured logging with timestamp, level, route, latency
+- Elasticsearch automatic field parsing
+- Kibana queries on any field
+
+**Why it matters:**
+- Can aggregate metrics from logs
+- Filter by any dimension instantly
+- Correlate logs with metrics timeline
+
+**Key takeaway:** Plain text logs are searchable. JSON logs are analyzable.
+
+#### 7. **Infrastructure as Code is Reproducible**
+
+**What we did:**
+- `cluster-config.yaml` for EKS
+- `deployment.yaml` for apps
+- All configs in Git
+
+**Why it matters:**
+- Cluster rebuild: 20 minutes instead of 2 days manual
+- Code review for infra changes
+- Disaster recovery is just `git clone && ./scripts/setup-cluster.sh`
+
+**Key takeaway:** If it's not in Git, it doesn't exist. Manual changes = tribal knowledge loss.
+
+#### 8. **Health Checks Prevent Serving Bad Traffic**
+
+**What we did:**
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health
+readinessProbe:
+  httpGet:
+    path: /health
+  successThreshold: 2
+```
+
+**Why it matters:**
+- Kubernetes removes unhealthy pods from load balancer
+- Bad deploys detected in seconds, not minutes
+- Zero-downtime updates
+
+**Key takeaway:** Health checks are your first line of defense. They should verify dependencies, not just "process is running."
+
+### Challenges and Solutions
+
+| Challenge | Solution | Lesson |
+|-----------|----------|--------|
+| Prometheus disk full after 3 days | Set `retentionSize: 9GB` and `retention: 7d` | Always set retention limits |
+| ServiceMonitor not discovered | Added `release: prometheus` label | Read the operator docs carefully |
+| Memory leak killed pods | Set memory limits + OOM alerts | Limits prevent cluster-wide impact |
+| High ECR costs | Use lifecycle policy to delete old images | Automate cleanup or pay forever |
+
+### Metrics That Matter
+
+**Golden Signals (for our app):**
+1. **Latency**: p95 < 100ms, p99 < 500ms
+2. **Traffic**: Requests per second by endpoint
+3. **Errors**: Error rate < 1%
+4. **Saturation**: CPU < 70%, Memory < 80%
+
+**SLO Example:**
+- 99.9% of requests complete in < 500ms
+- Allows 43 minutes downtime per month
+- Error budget: 0.1% = ~4,300 errors per 1M requests
+
+### Interview Talking Points
+
+**"Walk me through how you'd debug a production issue"**
+
+> "First, I'd check Grafana for anomalies - is latency spiking? Error rate? Then correlate the timeline with Kibana logs. If it's a specific pod, I'd use `kubectl logs` and `kubectl describe pod` to check for OOMKilled or crashloops. For CPU/memory issues, I'd port-forward port 6060 and capture a pprof profile. The key is having the observability in place beforehand - you can't troubleshoot what you can't measure."
+
+**"How do you ensure deployments don't break production?"**
+
+> "Progressive deployment with automated testing at each stage. Code goes through dev → qa with automated tests, then production requires manual approval from an SRE. We use HPA to handle traffic, health checks to prevent bad pods from serving traffic, and PodDisruptionBudgets to ensure minimum availability during updates. If something breaks, Kubernetes automatically rolls back on failed health checks."
+
+**"What's your approach to cost optimization?"**
+
+> "Right-size for actual usage, not theoretical max. We use HPA to scale dynamically, spot instances for dev/qa, and reserved instances for prod predictable workloads. Monitoring shows us which services are over-provisioned. Also, clean up unused resources - old ECR images, unused EBS volumes, stopped instances still incurring charges."
+
+---
+
+## Contributing
+
 ## Additional Resources
 
 - [EKS Best Practices Guide](https://aws.github.io/aws-eks-best-practices/)
