@@ -1,0 +1,19 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: sre-demo-service
+  namespace: dev
+  labels:
+    app: sre-demo-service
+    environment: dev
+    release: prometheus  # Required for kube-prometheus-stack to discover
+spec:
+  selector:
+    matchLabels:
+      app: sre-demo-service
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
