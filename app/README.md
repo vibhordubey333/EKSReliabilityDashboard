@@ -48,6 +48,8 @@ curl http://localhost:8080/metrics
 
 ### Run with Docker
 
+#### Option 1: Build and Run Locally
+
 ```bash
 # Build image
 docker build -t sre-demo-service:latest .
@@ -58,6 +60,68 @@ docker run -p 8080:8080 -p 6060:6060 sre-demo-service:latest
 # Test
 curl http://localhost:8080/health
 ```
+
+#### Option 2: Use ECR (Production Workflow)
+
+**ECR Repository**:
+```
+911723818034.dkr.ecr.us-east-1.amazonaws.com/sre-demo-service
+```
+
+**Build, Tag, and Push to ECR**:
+```bash
+# Automated script (recommended)
+cd /Users/infinitelearner/Code-Repos/EKSReliabilityDashboard
+./scripts/build-and-push.sh
+
+# Manual workflow
+# 1. Build image
+docker build -t sre-demo-service:$(git rev-parse --short HEAD) .
+
+# 2. Tag for ECR
+docker tag sre-demo-service:$(git rev-parse --short HEAD) \
+  911723818034.dkr.ecr.us-east-1.amazonaws.com/sre-demo-service:$(git rev-parse --short HEAD)
+docker tag sre-demo-service:$(git rev-parse --short HEAD) \
+  911723818034.dkr.ecr.us-east-1.amazonaws.com/sre-demo-service:latest
+
+# 3. Authenticate to ECR
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin 911723818034.dkr.ecr.us-east-1.amazonaws.com
+
+# 4. Push to ECR
+docker push 911723818034.dkr.ecr.us-east-1.amazonaws.com/sre-demo-service:$(git rev-parse --short HEAD)
+docker push 911723818034.dkr.ecr.us-east-1.amazonaws.com/sre-demo-service:latest
+```
+
+**Pull and Run from ECR**:
+```bash
+# Authenticate
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin 911723818034.dkr.ecr.us-east-1.amazonaws.com
+
+# Pull specific version by Git SHA
+docker pull 911723818034.dkr.ecr.us-east-1.amazonaws.com/sre-demo-service:7ea6fa4
+
+# Pull latest
+docker pull 911723818034.dkr.ecr.us-east-1.amazonaws.com/sre-demo-service:latest
+
+# Run from ECR
+docker run -d -p 8080:8080 -p 6060:6060 \
+  911723818034.dkr.ecr.us-east-1.amazonaws.com/sre-demo-service:latest
+
+# Test
+curl http://localhost:8080/health
+```
+
+**Git SHA Tagging Strategy**:
+
+Images are tagged with both Git SHA and `latest`:
+- **Git SHA tag** (e.g., `7ea6fa4`): Immutable reference to specific code version, enables rollback and auditing
+- **Latest tag**: Always points to most recent build for development/testing
+
+**Interview Talking Point**:
+> "I implemented Git SHA-based image tagging to ensure traceability between deployed containers and source code. Each image can be traced back to the exact commit, which is critical for debugging production issues and maintaining audit trails in regulated environments."
+
 
 ## Testing
 

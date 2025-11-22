@@ -444,6 +444,31 @@ kubectl delete pod -n monitoring -l app.kubernetes.io/name=grafana
 
 ---
 
+## Scenario-Based Interview Questions
+
+### Scenario 1: Prometheus Disk Full
+
+**Situation**: Prometheus pod crashes with OOMKilled, disk usage at 100%.
+
+**How to resolve:**
+> "First, check retention settings in values.yaml. If `retention: 7d` and `retentionSize: 9GB` but PV is only 10GB, there's no buffer. I'd increase PV size to 15GB or reduce retention to 5 days. Check if there are too many high-cardinality metrics (many unique label combinations) causing excessive storage. Use `promtool tsdb analyze` to identify problematic metrics. Consider adding recording rules to pre-aggregate high-cardinality queries, reducing raw sample storage."
+
+### Scenario 2: ServiceMonitor Not Working
+
+**Situation**: Created ServiceMonitor but Prometheus shows no targets.
+
+**Debugging steps:**
+> "First verify the ServiceMonitor has `release: prometheus` label - kube-prometheus-stack only discovers ServiceMonitors with this label. Check if the selector matches the Service labels exactly:  `kubectl get svc -n dev -o yaml | grep labels`. Verify the Service has endpoints: `kubectl get endpoints -n dev`. Check Prometheus config to see if the ServiceMonitor was discovered: port-forward Prometheus, check Status > Configuration. Look for errors in Prometheus operator logs: `kubectl logs -n monitoring prometheus-operator`."
+
+### Scenario 3: Missing Custom Metrics
+
+**Situation**: Grafana shows standard K8s metrics but not application metrics.
+
+**Root cause analysis:**
+> "The issue is likely that the Service doesn't have a ServiceMonitor or the ServiceMonitor port doesn't match. Verify the application exposes `/metrics`: `curl pod-ip:8080/metrics`. Check if a ServiceMonitor exists for the service. Verify the port name in ServiceMonitor matches the Service port name (not number). Test the endpoint directly in Prometheus: query `up{job='service-name'}` - if it returns 0 or nothing, Prometheus can't reach it. Check network policies aren't blocking Prometheus."
+
+---
+
 ## Interview Talking Points
 
 **Q: Why use Prometheus instead of CloudWatch?**

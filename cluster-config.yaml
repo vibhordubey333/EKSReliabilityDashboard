@@ -24,18 +24,18 @@ iam:
 
 # Managed node group - cost optimized for learning
 managedNodeGroups:
-  - name: ng-general
-    instanceType: t3.small  # Cost-optimized: 2 vCPU, 2 GiB RAM
+  - name: ng-1
+    instanceType: t3.medium  # Upgraded for EFK stack: 2 vCPU, 4 GiB RAM
     desiredCapacity: 2
     minSize: 1
     maxSize: 3
     volumeSize: 20  # GB - reduced from default 80GB
     volumeType: gp3
-    
+    privateNetworking: true
     # Labels for workload organization
     labels:
-      role: general
-      environment: multi
+      role: worker
+      environment: demo
     
     # Tags for cost tracking
     tags:

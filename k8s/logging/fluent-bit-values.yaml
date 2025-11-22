@@ -1,0 +1,64 @@
+# Helm values for Fluent Bit
+# DaemonSet log collector with JSON parsing
+
+# Resource limits
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# Service account
+serviceAccount:
+  create: true
+
+# Output to Elasticsearch
+config:
+  outputs: |
+    [OUTPUT]
+        Name            es
+        Match           kube.*
+        Host            elasticsearch-master
+        Port            9200
+        Logstash_Format On
+        Logstash_Prefix logstash
+        Retry_Limit     False
+        Replace_Dots    On
+
+  filters: |
+    [FILTER]
+        Name                kubernetes
+        Match               kube.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+        Kube_Tag_Prefix     kube.var.log.containers.
+        Merge_Log           On
+        Keep_Log            Off
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude On
+        Buffer_Size         32k
+
+    [FILTER]
+        Name                parser
+        Match               kube.*
+        Key_Name            log
+        Parser              json
+        Reserve_Data        On
+        Preserve_Key        On
+
+  parsers: |
+    [PARSER]
+        Name        json
+        Format      json
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+        Time_Keep   On
+
+# Tolerations to run on all nodes
+tolerations:
+  - key: node-role.kubernetes.io/master
+    operator: Exists
+    effect: NoSchedule

@@ -78,10 +78,58 @@ fi
 log_success "Found cluster '$CLUSTER_NAME'"
 
 ##############################################################################
-# Delete LoadBalancers and PVCs first (to avoid orphaned AWS resources)
+# Step 1: Delete Helm releases (EFK Stack, Monitoring)
 ##############################################################################
 
-log_info "Cleaning up LoadBalancers and PersistentVolumeClaims..."
+log_info "Step 1: Deleting Helm releases..."
+
+# Delete EFK stack if exists
+if kubectl get namespace logging &> /dev/null; then
+    log_info "Uninstalling EFK Stack..."
+    helm uninstall elasticsearch -n logging 2>/dev/null || log_warning "Elasticsearch not found"
+    helm uninstall kibana -n logging 2>/dev/null || log_warning "Kibana not found"
+    helm uninstall fluent-bit -n logging 2>/dev/null || log_warning "Fluent Bit not found"
+    log_success "EFK Stack uninstalled"
+fi
+
+# Delete monitoring stack if exists
+if kubectl get namespace monitoring &> /dev/null; then
+    log_info "Uninstalling Monitoring Stack..."
+    helm uninstall prometheus -n monitoring 2>/dev/null || log_warning "Prometheus not found"
+    log_success "Monitoring Stack uninstalled"
+fi
+
+##############################################################################
+# Step 2: Delete PersistentVolumeClaims
+##############################################################################
+
+log_info "Step 2: Deleting PersistentVolumeClaims..."
+
+# Delete logging PVCs
+if kubectl get namespace logging &> /dev/null; then
+    PVC_COUNT=$(kubectl get pvc -n logging --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$PVC_COUNT" -gt 0 ]; then
+        log_info "Deleting $PVC_COUNT PVCs in logging namespace..."
+        kubectl delete pvc --all -n logging --timeout=60s
+        log_success "Logging PVCs deleted"
+    fi
+fi
+
+# Delete monitoring PVCs
+if kubectl get namespace monitoring &> /dev/null; then
+    PVC_COUNT=$(kubectl get pvc -n monitoring --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$PVC_COUNT" -gt 0 ]; then
+       log_info "Deleting $PVC_COUNT PVCs in monitoring namespace..."
+        kubectl delete pvc --all -n monitoring --timeout=60s
+        log_success "Monitoring PVCs deleted"
+    fi
+fi
+
+##############################################################################
+# Step 3: Delete LoadBalancer Services
+##############################################################################
+
+log_info "Step 3: Cleaning up LoadBalancers and PersistentVolumeClaims..."
 
 # Delete services of type LoadBalancer in all namespaces
 for ns in dev qa prod; do
