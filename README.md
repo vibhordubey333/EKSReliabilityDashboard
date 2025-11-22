@@ -264,6 +264,101 @@ level: "error"
 
 For detailed logging documentation, see [docs/LOGGING.md](docs/LOGGING.md).
 
+## Performance Testing and Profiling
+
+The SRE demo service includes debugging endpoints for performance testing and profiling with Go's pprof.
+
+### Test Memory Leaks
+
+```bash
+# Port-forward service
+kubectl port-forward -n dev svc/sre-demo-service 8080:8080 6060:6060
+
+# Trigger memory leak (allocate 100MB)
+curl "http://localhost:8080/leak?size=102400&duration=300"
+
+# Capture heap dump
+curl http://localhost:6060/debug/pprof/heap > heap.prof
+
+# Analyze with pprof
+go tool pprof heap.prof
+```
+
+**pprof commands:**
+```
+(pprof) top10          # Top memory allocators
+(pprof) list leak      # Source code
+(pprof) web            # Visual graph
+```
+
+**Expected output:**
+```
+Showing nodes accounting for 102.40MB, 100% of 102.40MB total
+      flat  flat%   sum%        cum   cum%
+  102.40MB   100%   100%   102.40MB   100%  main.LeakHandler.func1
+```
+
+**Monitor in Grafana:**
+- Navigate to "Heap Usage" panel
+- Watch memory increase continuously
+- GC unable to reclaim (intentional leak)
+
+### Test CPU Spikes
+
+```bash
+# Generate CPU load for 5 seconds
+curl "http://localhost:8080/cpu?duration=5000"
+
+# Capture CPU profile (30 seconds)
+curl "http://localhost:6060/debug/pprof/profile?seconds=30" > cpu.prof
+
+# Generate load while profiling
+for i in {1..30}; do curl "http://localhost:8080/cpu?duration=1000"; done &
+
+# Analyze
+go tool pprof cpu.prof
+```
+
+**Expected output:**
+```
+Showing nodes accounting for 28.50s, 95% of 30.00s total
+      flat  flat%   sum%        cum   cum%
+    28.50s 95.00% 95.00%    28.50s 95.00%  main.CPUHandler
+```
+
+**Monitor in Grafana:**
+- "CPU Usage (%)" shows spike to 70-90%
+- "Latency (p95/p99)" increases during load
+
+### Available Profiles
+
+```bash
+# Heap memory
+curl http://localhost:6060/debug/pprof/heap > heap.prof
+
+# CPU (30 second sample)
+curl "http://localhost:6060/debug/pprof/profile?seconds=30" > cpu.prof
+
+# Goroutines
+curl http://localhost:6060/debug/pprof/goroutine > goroutine.prof
+
+# Allocations
+curl http://localhost:6060/debug/pprof/allocs > allocs.prof
+```
+
+### Visual Analysis
+
+```bash
+# Interactive web UI
+go tool pprof -http=:8081 heap.prof
+
+# Generate flame graph
+go tool pprof -pdf cpu.prof > cpu_profile.pdf
+
+# Top allocators (text)
+go tool pprof -text heap.prof
+```
+
 ## Cost Optimization
 
 This setup is optimized for **learning and demonstration**:
