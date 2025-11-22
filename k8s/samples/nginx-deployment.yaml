@@ -24,7 +24,7 @@ spec:
         - containerPort: 80
           name: http
         
-        # Resource requests and limits (important for proper scheduling)
+        # Resource requests and limits (important for proper scheduling.)
         resources:
           requests:
             cpu: 50m
