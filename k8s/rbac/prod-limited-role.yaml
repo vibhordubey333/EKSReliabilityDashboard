@@ -1,0 +1,43 @@
+---
+# Limited deployer role for production - can deploy but not delete
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prod-deployer
+  namespace: prod
+rules:
+- apiGroups: ["apps"]
+  resources:
+    - deployments
+    - replicasets
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: [""]
+  resources:
+    - pods
+    - pods/log
+    - services
+    - configmaps
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources:
+    - services
+    - configmaps
+  verbs: ["create", "update", "patch"]
+---
+# RoleBinding for prod-deployer
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prod-deployer-binding
+  namespace: prod
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prod-deployer
+subjects:
+- kind: Group
+  name: prod-deployers
+  apiGroup: rbac.authorization.k8s.io
+- kind: ServiceAccount
+  name: default
+  namespace: prod
