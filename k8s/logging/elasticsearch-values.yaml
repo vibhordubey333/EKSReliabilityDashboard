@@ -1,0 +1,29 @@
+# Helm values for Elasticsearch
+# Single-node cluster for demo purposes
+
+replicas: 1
+minimumMasterNodes: 1
+
+# Resource limits
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "1000m"
+    memory: "2Gi"
+
+# JVM heap size
+esJavaOpts: "-Xmx512m -Xms512m"
+
+# Persistent volume
+volumeClaimTemplate:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi
+
+# Disable security for demo (enable for production)
+xpack:
+  security:
+    enabled: false
