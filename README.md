@@ -75,9 +75,9 @@ graph TB
 graph LR
     subgraph "Application"
         App[SRE Demo Service]
-        Health[/health]
-        Metrics[/metrics]
-        Debug[/debug/pprof]
+        Health["/health endpoint"]
+        Metrics["/metrics endpoint"]
+        Debug["/debug/pprof"]
     end
     
     subgraph "Observability Stack"
