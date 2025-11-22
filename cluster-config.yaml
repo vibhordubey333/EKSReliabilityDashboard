@@ -1,0 +1,79 @@
+---
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: eks-reliability-demo
+  region: us-east-1
+  version: "1.28"
+
+# Availability zones for high availability
+availabilityZones:
+  - us-east-1a
+  - us-east-1b
+
+# VPC configuration
+vpc:
+  cidr: 10.0.0.0/16
+  nat:
+    gateway: Single  # Cost optimization: use single NAT gateway instead of HA setup
+
+# IAM configuration
+iam:
+  withOIDC: true  # Enable IRSA (IAM Roles for Service Accounts)
+
+# Managed node group - cost optimized for learning
+managedNodeGroups:
+  - name: ng-general
+    instanceType: t3.small  # Cost-optimized: 2 vCPU, 2 GiB RAM
+    desiredCapacity: 2
+    minSize: 1
+    maxSize: 3
+    volumeSize: 20  # GB - reduced from default 80GB
+    volumeType: gp3
+    
+    # Labels for workload organization
+    labels:
+      role: general
+      environment: multi
+    
+    # Tags for cost tracking
+    tags:
+      k8s.io/cluster-autoscaler/enabled: "true"
+      k8s.io/cluster-autoscaler/eks-reliability-demo: "owned"
+      Purpose: "SRE-Interview-Demo"
+      ManagedBy: "eksctl"
+    
+    # SSH access (optional, for troubleshooting)
+    # ssh:
+    #   allow: true
+    #   publicKeyName: your-key-name
+    
+    # IAM policies for nodes
+    iam:
+      withAddonPolicies:
+        autoScaler: true
+        cloudWatch: true
+        ebs: true
+        efs: true
+        albIngress: true
+
+# CloudWatch logging for observability
+cloudWatch:
+  clusterLogging:
+    enableTypes:
+      - "api"
+      - "audit"
+      - "authenticator"
+      - "controllerManager"
+      - "scheduler"
+    logRetentionInDays: 7  # Cost optimization: shorter retention for demo
+
+# Add-ons (managed by EKS)
+addons:
+  - name: vpc-cni
+    version: latest
+  - name: coredns
+    version: latest
+  - name: kube-proxy
+    version: latest
