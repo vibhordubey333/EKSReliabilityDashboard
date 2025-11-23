@@ -182,19 +182,30 @@ This document provides in-depth information about the EKS cluster setup, design 
 
 ### Step 6: Cost Optimization Decisions
 
-**Budget constraint**: Need to minimize AWS spend
+**Budget constraint**: Need to minimize AWS spend while supporting EFK stack
 
 **Optimization strategies implemented**:
-1. **Instance type**: t3.small instead of t3.medium → Save ~$30/month
-2. **NAT gateway**: Single instead of HA → Save ~$30/month  
-3. **Log retention**: 7 days instead of default 30 → Save on CloudWatch
-4. **Volume size**: 20GB instead of default 80GB → Save on EBS
-5. **Node count**: Start with 2, autoscale if needed
+1. **Instance type**: t3.medium (required for EFK stack 4GB RAM)
+2. **NAT gateway**: Single instead of HA → Save ~$32/month  
+3. **Log retention**: 7 days instead of default 30 → Save ~$5-10/month on CloudWatch
+4. **Volume size**: 20GB instead of default 80GB → Save ~$6/month per node (~$12 total)
+5. **Node count**: Start with 2, autoscale to 3 max (vs always running 3+)
 
-**Total savings**: ~$60/month vs a default setup
+**Actual monthly cost**:
+- EKS Control Plane: ~$73/month
+- Worker Nodes (2 × t3.medium): ~$60/month
+- NAT Gateway (single): ~$32/month
+- EBS Volumes (2 × 20GB): ~$4/month
+- **Total**: ~$169/month
+
+**Cost vs. Performance tradeoffs**:
+- **t3.medium chosen**: EFK stack requires 4GB RAM minimum (Elasticsearch + Kibana + Fluent Bit)
+- **t3.small would fail**: Only 2GB RAM insufficient for logging stack
+- **Single NAT saves $32/month**: Acceptable for demo, not for production HA
+- Reduced volume size saves $12/month with no impact on demo workloads
 
 **Interview Talking Point**:
-> "Cost optimization is a key SRE responsibility. I reduced costs by 40% while maintaining the learning value. In production, I'd analyze actual usage patterns and right-size resources accordingly. I'd also evaluate Reserved Instances for predictable workloads and Spot Instances for fault-tolerant jobs."
+> "Cost optimization is a key SRE responsibility. Initially I tried t3.small to save costs, but the EFK logging stack requires approximately 3-4GB RAM total. I upgraded to t3.medium (4GB RAM per node) which adds ~$30/month but enables full observability. I still saved ~$44/month through single NAT gateway ($32) and reduced EBS volumes ($12). In production, I'd use reserved instances for 40% savings and spot instances for non-critical workloads."
 
 ### Step 7: Security Best Practices
 
