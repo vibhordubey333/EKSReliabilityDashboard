@@ -135,34 +135,63 @@ This document provides in-depth information about the EKS cluster setup, design 
 
 ### Step 4: Automation & DRY Principle (Day 2)
 
-**What I automated**:
+**Goal**: Reduce repetitive tasks with bash scripts
 
-**a) `setup-cluster.sh`**
-- Why? Manual steps are error-prone and not repeatable
-- Features:
-  - Pre-flight checks (tools installed, AWS creds valid)
-  - Step-by-step progress with colors
-  - Error handling at each stage
-  - Waits for resources to be ready
+**Scripts Created:**
 
-**b) `validate-cluster.sh`**
-- Why? Need to verify everything works
-- Checks 7 different aspects:
-  - Cluster connectivity
-  - Node health
-  - System pods
-  - Namespaces
-  - RBAC
-  - Sample deployments
-  - AWS EKS status
+1. **[setup-cluster.sh](file:///Users/infinitelearner/Code-Repos/EKSReliabilityDashboard/scripts/setup-cluster.sh)** - Automated cluster creation
+   - Validates prerequisites (eksctl, kubectl, AWS CLI)
+   - Creates EKS cluster using eksctl
+   - Deploys namespaces (dev, qa, prod)
+   - Applies RBAC policies
+   - Installs metrics-server for HPA
 
-**c) `cleanup-cluster.sh`**
-- Why? Cost control is an SRE responsibility
-- Prevents orphaned resources (LoadBalancers, EBS volumes)
-- Confirmation prompt to prevent accidents
+2. **[validate-cluster.sh](file:///Users/infinitelearner/Code-Repos/EKSReliabilityDashboard/scripts/validate-cluster.sh)** - Comprehensive validation
+   - Checks node status, namespaces, RBAC, metrics-server
+   - Validates 7 different aspects of cluster health
+
+3. **[cleanup-cluster.sh](file:///Users/infinitelearner/Code-Repos/EKSReliabilityDashboard/scripts/cleanup-cluster.sh)** - Complete teardown
+   - Uninstalls Helm releases (monitoring, logging)
+   - Deletes PVCs and namespaces
+   - Removes EKS cluster and ECR repository
+
+4. **[build-and-push.sh](file:///Users/infinitelearner/Code-Repos/EKSReliabilityDashboard/scripts/build-and-push.sh)** - Docker automation
+   - Creates ECR repository if needed
+   - Builds Docker image with Git SHA tag
+   - Pushes to ECR
+
+5. **[install-monitoring.sh](file:///Users/infinitelearner/Code-Repos/EKSReliabilityDashboard/scripts/install-monitoring.sh)** - Prometheus & Grafana setup
+   - Installs kube-prometheus-stack via Helm
+   - Configures 7-day retention, persistent storage
+   - Waits for pods and displays access instructions
+
+6. **[install-logging.sh](file:///Users/infinitelearner/Code-Repos/EKSReliabilityDashboard/scripts/install-logging.sh)** - EFK stack setup
+   - Installs Elasticsearch, Fluent Bit, Kibana
+   - Configures log collection from all namespaces
+   - Shows Kibana access commands
+
+7. **[access-grafana.sh](file:///Users/infinitelearner/Code-Repos/EKSReliabilityDashboard/scripts/access-grafana.sh)** - Quick Grafana access
+   - Port-forwards to localhost:3000
+   - Displays credentials (admin/admin123)
+
+8. **[access-kibana.sh](file:///Users/infinitelearner/Code-Repos/EKSReliabilityDashboard/scripts/access-kibana.sh)** - Quick Kibana access
+   - Port-forwards to localhost:5601
+
+9. **[setup-complete-demo.sh](file:///Users/infinitelearner/Code-Repos/EKSReliabilityDashboard/scripts/setup-complete-demo.sh)** - Full automation
+   - Orchestrates: cluster → monitoring → logging → build → deploy
+   - One-command complete setup (30-40 minutes)
+
+**Key Principles Applied:**
+- **DRY**: No manual commands repeated
+- **Error handling**: `set -e`, `set -o pipefail`
+- **Validation**: Pre-flight checks before execution
+- **Idempotency**: Scripts can be run multiple times safely
+- **User feedback**: Colored output (info, success, warning, error)
+- **Modularity**: Each script has a single responsibility
 
 **Interview Talking Point**:
-> "As an SRE, automation is in my DNA. I scripted everything that would be done more than once. These scripts reduce deployment time from 30+ minutes of manual work to one command. They also prevent human error - the script never forgets a step."
+> "As an SRE, I applied the DRY principle to these 9 scripts reduce deployment from 30+ minutes of manual work to one command. They also prevent human error - scripts never forget steps. The complete demo script orchestrates the entire stack, while individual scripts allow modular execution."
+
 
 ### Step 5: Documentation (Day 2)
 
